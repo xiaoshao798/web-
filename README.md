@@ -1,3 +1,6 @@
+
+
+
 web漏洞扫描脚本需要有python环境
 全面的漏洞检测类型
 增加了市面上常见的所有漏洞类型：
@@ -42,4 +45,6 @@ txt格式报告，自动打包为zip
 
 运行:python xiao.py https://your-website.com
 
+
+可以进行优化，加我wx号xiaozelz798  可以讨论
 
