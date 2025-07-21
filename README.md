@@ -1,6 +1,6 @@
 web漏洞扫描脚本需要有python环境
 全面的漏洞检测类型
-增加了市面上常见的所有漏洞类型，使用中文名称描述：
+增加了市面上常见的所有漏洞类型：
 
 SQL注入
 
@@ -35,5 +35,11 @@ HTTP头注入
 敏感数据暴露
 
 txt格式报告，自动打包为zip
+
+
 安装依赖：pip install requests
+
+
 运行:python xiao.py https://your-website.com
+
+
